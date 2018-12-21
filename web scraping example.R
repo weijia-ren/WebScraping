@@ -1,3 +1,5 @@
+.libPaths(c(.libPaths(),"c:/3.5"))
+
 # Web Scraping Example
 
 ###########################################################################
@@ -6,6 +8,7 @@
 ###########################################################################
 
 ## step 1: inspect page
+library(xml2)
 library(rvest)
 url <- "https://www.ama.org/publications/MarketingNews/Pages/the-ama-gold-report-2017-top-50-market-research-firms.aspx"
 browseURL(url)
@@ -14,70 +17,72 @@ browseURL(url)
 url_parsed <- read_html(url)
 table<-html_table(url_parsed, header = FALSE, fill = TRUE) 
 table <- table[[1]]
+head(table)
 
 ##  step 3: Clean up and manipulate the dataset
 library(stringr)
 var <- paste("X", 2:19, sep="")
 a <- table[var]
+head(a)
 df <- a[c(1,8,15,22,31,40,46,52,61,69,80,86,93,99,105,111,117,123,129,138,
           144,150,156,162,168,174,180,186,195,201,207,216,222,228,238,248,254,260,266,
           272,281,288,294,300,306,313,319,325,331,340),]
-df[df==""]<-NA
+df[df==""]<-NA %>% 
 df=as.data.frame(t(apply(df,1, function(x) { return(c(x[!is.na(x)],x[is.na(x)]) )} ))) 
 df$V6[df$V6 == "Founded"] <- "Founded:"
 df$V7[df$V6 != "Founded:"] <- "NA"
 df$V6[df$V6 != "Founded:"] <- "NA"
 df=as.data.frame(t(apply(df,1, function(x) { return(c(x[!is.na(x)],x[is.na(x)]) )} )))
-
 df$V1<-word(df$V1,1,sep = "\\:") 
-df$V1<-gsub(" ","",df$V1) 
-df$V1<-gsub("U.S.\nHeadquarters","",df$V1)
-df$Name<-word(df$V1,2,sep = "\\.")
+df$V1<-gsub("\\ |\\U.S.\nHeadquarters|\\*|\\n|\\U","",df$V1) 
 df$ID<-word(df$V1,1,sep = "\\.")
-
-df$V11<-gsub(" ","",df$V11) 
-df$V11[df$V11 == "$3.6\nB"] <- "$3600 M"
-df$V11[df$V11 == "$1.4\nB"] <- "$1400 M"
-df$V11 = (gsub("[A-Z]", "", df$V11))
-df$U.S.Revenue = as.numeric((gsub("\\$", "", df$V11)))
-df$V15<-gsub(" ","",df$V15)
-df$V15[df$V15 == "$1.4\nB"] <- "$1400 M"
-df$V15[df$V15 == "$1.9\nB"] <- "$1900 M"
-df$V15[df$V15 == "$2.7\nB"] <- "$2700 M"
-df$V15[df$V15 == "$2.9\nB"] <- "$2900 M"
-df$V15 = (gsub("[A-Z]", "", df$V15))
-df$Non.US.Revenue = as.numeric((gsub("\\$", "", df$V15)))
+df$Name<-word(df$V1,2,sep = "\\.")
+df$city<-gsub("[\\ \r\n]", "", df$V3)
+df$city[df$city == "NewYork"]<-"New York,NY"
+df$city[df$city == "Chicago"]<-"Chicago,IL"
+df$CEO<-gsub("[\r\n]", "", df$V5)
+df$CEO<-gsub("\\s+", " ", df$CEO)
+df$year<-as.numeric(as.character(df$V7))
 df$size = as.numeric((gsub("\\,", "", df$V9)))
-df$V7<-as.character(df$V7)
-df$year = as.numeric(df$V7)
-df$V3[df$V3 == "Chicago"]<-"Chicago, IL"
-df$V3<-gsub(" ","",df$V3) 
-df$V3[df$V3 == "New\nYork"]<-"New York, NY"
-df<- df [c("ID","Name","V3","V5","year","size","U.S.Revenue","Non.US.Revenue")]
+df$US.Revenue<-gsub("[\\ \r\n\\$\\M\\.]","",df$V11) 
+df$US.Revenue<-as.numeric(gsub("[\\B]","00",df$US.Revenue)) 
+df$Non.US.Revenue<-gsub("[\\ \r\n\\$\\M\\.]","",df$V15) 
+df$Non.US.Revenue<-as.numeric(gsub("[\\B]","00",df$Non.US.Revenue)) 
 
+# cleaned dataset
+df<- df [c("ID","Name","city","CEO","year","size","US.Revenue","Non.US.Revenue")]
+head(df)
 
+# ID and Company Name
+df[, c(1,2)]
+
+# Show the results in plots
 library (ggplot2)
+
+# Founded year
 ggplot(df,aes(x=year))+geom_histogram(color="blue", fill="blue", alpha=0.2,bins = 50)+
   labs(x="Found Year",y="Counts")+theme(legend.position="bottom")
-ggplot(df,aes(x=year,y=U.S.Revenue,size=size,label=ID))+geom_point(alpha=0.4, color="blue")+
+# US Revenue
+ggplot(df,aes(x=year,y=US.Revenue,size=size,label=ID))+geom_point(alpha=0.4, color="blue")+
   scale_size(range=c(0,30))+geom_text(aes(label=ID),hjust=1, vjust=-0.5,size=3)+
   labs(x="Founded year",y="U.S. Revenue", size="Employee #")+
   theme(legend.position="bottom",legend.box = "vertical",legend.title = element_blank())
+# Non-US Revenue
 ggplot(df,aes(x=year,y=Non.US.Revenue,size=size,label=ID))+geom_point(alpha=0.4, color="blue")+
   scale_size(range=c(0,30))+geom_text(aes(label=ID),hjust=1, vjust=-0.5,size=3)+
   labs(x="Founded year",y="Non-U.S. Revenue", size="Employee #")+
   theme(legend.position="bottom",legend.box = "vertical",legend.title = element_blank())
 
+#devtools::install_github("hrbrmstr/nominatim")
 library(nominatim)
-city <- df[['V3']]
-city<-gsub("[\r\n]", "", city)
+city <- df$city
 city
-b1 <- osm_geocode(city, key = Sys.getenv("nominatimkey"))
-b1[c("lat", "lon")]
-b1 <- cbind(ID = rownames(b1), b1)
+address <- osm_geocode(city, key = Sys.getenv("nominatimkey"))
+address[c("lat", "lon")]
+address <- cbind(ID = rownames(address), address)
 
 library(leaflet)
-leaflet(data = b1) %>% addTiles() %>% addCircleMarkers(~lon, ~lat , popup = ~as.character(ID))
+leaflet(data = address) %>% addTiles() %>% addCircleMarkers(~lon, ~lat , popup = ~as.character(ID))
 
 
 ###########################################################################
@@ -211,6 +216,7 @@ content <- read_html("AmericanFactFinderTest.html", encoding = "utf8")
 tabs <- html_table(content, fill = TRUE)
 tab <- tabs[[2]]
 
+head(tab)
 
 
 
